@@ -13,13 +13,44 @@ case class ExecutionResult(
     error: Option[String] = None
 )
 
+/** Computes the classpath for the embedded Scala REPL.
+  *
+  * `-usejavacp` only reads `java.class.path`, which can be incomplete
+  * (e.g. fat JAR, custom classloader). This object builds an explicit
+  * classpath by also locating Scala core libraries via loaded classes.
+  */
+private object ReplClasspath:
+  lazy val args: Array[String] =
+    val paths = mutable.LinkedHashSet[String]()
+
+    // java.class.path — covers sbt run, java -cp, etc.
+    Option(System.getProperty("java.class.path")).foreach { cp =>
+      paths ++= cp.split(java.io.File.pathSeparator).filter(_.nonEmpty)
+    }
+
+    // Locate the Scala standard library via a loaded class.
+    // This covers cases where java.class.path doesn't list it
+    // (fat JARs, app servers, custom launchers).
+    // Only the stdlib is included — compiler/REPL internals are
+    // intentionally kept off the executed code's classpath.
+    val markerClasses: List[Class[?]] = List(
+      classOf[scala.Unit],                    // scala-library
+    )
+    for cls <- markerClasses do
+      try
+        val loc = cls.getProtectionDomain.getCodeSource.getLocation
+        paths += java.nio.file.Paths.get(loc.toURI).toString
+      catch case _: Exception => ()
+
+    Array("-classpath", paths.mkString(java.io.File.pathSeparator), "-color:never")
+
 /** A REPL session that maintains state across executions */
 class ReplSession(val id: String):
   private val outputCapture = new ByteArrayOutputStream()
   private val printStream = new PrintStream(outputCapture, true, StandardCharsets.UTF_8)
   
   private val driver = new ReplDriver(
-    Array("-usejavacp", "-color:never"),
+    ReplClasspath.args,
     printStream,
     Some(getClass.getClassLoader)
   )
@@ -94,7 +125,7 @@ object ScalaExecutor:
     
     try
       val driver = new ReplDriver(
-        Array("-usejavacp", "-color:never"),
+        ReplClasspath.args,
         printStream,
         Some(getClass.getClassLoader)
       )
