@@ -4,6 +4,23 @@ import io.circe.*
 import io.circe.syntax.*
 import executor.{ScalaExecutor, SessionManager, ExecutionResult}
 
+private val InterfaceReference: String =
+  val preamble =
+    """|IMPORTANT: You must only use the provided interface below to interact with the system.
+       |Do not use Java/Scala standard library APIs (java.io, java.nio, scala.io, sys.process, java.net, etc.) to access files, run processes, or make network requests directly.
+       |All system interactions must go through the capability-scoped API so that access is properly sandboxed and auditable.
+       |
+       |The interface is pre-loaded and available in all code executions.
+       |
+       |""".stripMargin
+  val source =
+    val stream = classOf[McpServer].getResourceAsStream("/Interface.scala")
+    if stream != null then
+      try scala.io.Source.fromInputStream(stream)(using scala.io.Codec.UTF8).mkString
+      finally stream.close()
+    else "(Interface.scala source not found on classpath)"
+  preamble + source
+
 /** MCP Server implementation for Scala code execution */
 class McpServer:
   private val sessionManager = new SessionManager()
@@ -11,7 +28,7 @@ class McpServer:
   private val tools: List[Tool] = List(
     Tool(
       name = "execute_scala",
-      description = Some("Execute a Scala code snippet and return the output. This is stateless - each execution is independent."),
+      description = Some("Execute a Scala code snippet and return the output. This is stateless - each execution is independent. The library API is pre-loaded: use requestFileSystem(root){ ... }, access(path), grep/grepRecursive/find for files; requestExecPermission(cmds){ exec(...) } for processes; requestNetwork(hosts){ httpGet/httpPost(...) } for HTTP."),
       inputSchema = Json.obj(
         "type" -> "object".asJson,
         "properties" -> Json.obj(
@@ -47,7 +64,7 @@ class McpServer:
     ),
     Tool(
       name = "execute_in_session",
-      description = Some("Execute Scala code in an existing REPL session. The session maintains state between executions."),
+      description = Some("Execute Scala code in an existing REPL session. The session maintains state between executions. The library API is pre-loaded: use requestFileSystem(root){ ... }, access(path), grep/grepRecursive/find for files; requestExecPermission(cmds){ exec(...) } for processes; requestNetwork(hosts){ httpGet/httpPost(...) } for HTTP."),
       inputSchema = Json.obj(
         "type" -> "object".asJson,
         "properties" -> Json.obj(
@@ -66,6 +83,14 @@ class McpServer:
     Tool(
       name = "list_sessions",
       description = Some("List all active REPL session IDs."),
+      inputSchema = Json.obj(
+        "type" -> "object".asJson,
+        "properties" -> Json.obj()
+      )
+    ),
+    Tool(
+      name = "show_interface",
+      description = Some("Show the full capability-scoped API available in the REPL. Call this first to understand what methods you can use. You must only use the provided interface to interact with the system."),
       inputSchema = Json.obj(
         "type" -> "object".asJson,
         "properties" -> Json.obj()
@@ -143,6 +168,8 @@ class McpServer:
         executeInSession(arguments)
       case "list_sessions" =>
         listSessions()
+      case "show_interface" =>
+        showInterface()
       case other =>
         Left(s"Unknown tool: $other")
   
@@ -189,6 +216,9 @@ class McpServer:
       s"Active sessions:\n${sessions.mkString("\n")}"
     Right(CallToolResult(content = List(TextContent(text))))
   
+  private def showInterface(): Either[String, CallToolResult] =
+    Right(CallToolResult(content = List(TextContent(InterfaceReference))))
+
   private def formatExecutionResult(result: ExecutionResult): CallToolResult =
     val output = result.error match
       case Some(err) if result.output.nonEmpty =>

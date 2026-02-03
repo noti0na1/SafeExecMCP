@@ -49,20 +49,32 @@ private object ReplClasspath:
       "-feature",
       "-unchecked",
       "-Yexplicit-nulls",
-      "-Wsafe-init"
+      "-Wsafe-init",
+      "-language:experimental.captureChecking",
+      "-language:experimental.modularity"
     )
+
+/** Preamble code injected before user code to make the library API available. */
+private val LibraryPreamble: String =
+  """|import library.*
+     |val api: Interface = new InterfaceImpl((root, check) => new RealFileSystem(java.nio.file.Path.of(root), check))
+     |import api.*
+     |""".stripMargin
 
 /** A REPL session that maintains state across executions */
 class ReplSession(val id: String):
   private val outputCapture = new ByteArrayOutputStream()
   private val printStream = new PrintStream(outputCapture, true, StandardCharsets.UTF_8)
-  
+
   private val driver = new ReplDriver(
     ReplClasspath.args,
     printStream,
     Some(getClass.getClassLoader)
   )
-  private var state: State = driver.initialState
+  private var state: State =
+    val s0 = driver.initialState
+    // Run preamble once to make library API available in the session
+    driver.run(LibraryPreamble)(using s0)
   
   /** Execute code in this session and return the result */
   def execute(code: String): ExecutionResult =
@@ -138,7 +150,10 @@ object ScalaExecutor:
         Some(getClass.getClassLoader)
       )
       var state = driver.initialState
-      
+      // Run preamble to make library API available
+      state = driver.run(LibraryPreamble)(using state)
+      outputCapture.reset()
+
       val oldOut = System.out
       val oldErr = System.err
       System.setOut(printStream)

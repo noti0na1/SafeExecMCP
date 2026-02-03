@@ -1,7 +1,27 @@
-val scala3Version = "3.8.1"
+// val scala3Version = "3.8.1"
+val scala3Version = "3.8.2-RC1"
+
+lazy val lib = project
+  .in(file("library"))
+  .settings(
+    scalaVersion := scala3Version,
+    Compile / unmanagedSourceDirectories := Seq(
+      baseDirectory.value,
+      baseDirectory.value / "impl"
+    ),
+    Compile / unmanagedSources / excludeFilter :=
+      "*.test.scala" || "project.scala" || "README.md",
+    scalacOptions ++= Seq(
+      "-language:experimental.captureChecking",
+      "-language:experimental.modularity",
+      "-deprecation", "-feature", "-unchecked",
+      "-Yexplicit-nulls", "-Wsafe-init"
+    )
+  )
 
 lazy val root = project
   .in(file("."))
+  .dependsOn(lib)
   .settings(
     name := "SafeExecMCP",
     version := "0.1.0-SNAPSHOT",
@@ -27,6 +47,14 @@ lazy val root = project
       "org.scala-lang" %% "scala3-repl" % scala3Version,
       "org.scalameta" %% "munit" % "1.2.2" % Test,
     ),
+
+    // Bundle Interface.scala source as a classpath resource so show_interface can serve it
+    Compile / resourceGenerators += Def.task {
+      val src = (lib / baseDirectory).value / "Interface.scala"
+      val dst = (Compile / resourceManaged).value / "Interface.scala"
+      IO.copyFile(src, dst)
+      Seq(dst)
+    }.taskValue,
 
     // Enable forking for the REPL execution
     fork := true,
