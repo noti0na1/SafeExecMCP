@@ -16,7 +16,9 @@ private val InterfaceReference: String =
   val source =
     val stream = classOf[McpServer].getResourceAsStream("/Interface.scala")
     if stream != null then
-      try scala.io.Source.fromInputStream(stream)(using scala.io.Codec.UTF8).mkString
+      try 
+        val content = scala.io.Source.fromInputStream(stream)(using scala.io.Codec.UTF8).mkString
+        "```scala\n" + content + "\n```"
       finally stream.close()
     else "(Interface.scala source not found on classpath)"
   preamble + source

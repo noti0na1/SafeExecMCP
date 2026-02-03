@@ -4,26 +4,26 @@ import java.io.{File, PrintWriter, FileWriter}
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.ZoneOffset
-import java.util.concurrent.atomic.AtomicInteger
 
 /** Records user-submitted code and execution results to log files.
   *
   * Each call to `record` writes two files under `dir`:
-  *   - `NNNN_<timestamp>_<session>.scala` — the submitted code
-  *   - `NNNN_<timestamp>_<session>.result` — the execution result
+  *   - `<timestamp>_<seq>_<session>.scala` — the submitted code
+  *   - `<timestamp>_<seq>_<session>.result` — the execution result
   *
-  * NNNN is a zero-padded sequence number so files sort chronologically.
+  * The sequence counter ensures unique filenames even when
+  * multiple executions share the same millisecond timestamp.
   */
 class CodeRecorder(dir: File):
   dir.mkdirs()
 
-  private val counter = new AtomicInteger(1)
-  private val tsFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss").withZone(ZoneOffset.UTC)
+  private val tsFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss.SSS").withZone(ZoneOffset.UTC)
+  private val counter = java.util.concurrent.atomic.AtomicLong(0)
 
   def record(code: String, sessionId: String, result: ExecutionResult): Unit =
-    val seq = f"${counter.getAndIncrement()}%04d"
     val ts = tsFormat.format(Instant.now())
-    val base = s"${seq}_${ts}_$sessionId"
+    val seq = counter.getAndIncrement()
+    val base = s"${ts}_%04d_$sessionId".format(seq)
 
     val codeFile = new PrintWriter(new FileWriter(File(dir, s"$base.scala")))
     try

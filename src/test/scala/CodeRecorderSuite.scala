@@ -64,7 +64,7 @@ class CodeRecorderSuite extends munit.FunSuite:
       assert(content.contains("Error: syntax error"))
     }
 
-  test("multiple records produce separate files with sequential numbering"):
+  test("multiple records produce separate files"):
     withTempDir("multiple") { dir =>
       val recorder = CodeRecorder(dir)
       recorder.record("first", "s1", ExecutionResult(true, "out1"))
@@ -73,15 +73,14 @@ class CodeRecorderSuite extends munit.FunSuite:
 
       val codes = scalaFiles(dir)
       assertEquals(codes.length, 2)
-      assert(codes(0).getName < codes(1).getName)
 
-      val content1 = scala.io.Source.fromFile(codes(0)).mkString
-      val content2 = scala.io.Source.fromFile(codes(1)).mkString
-      assertEquals(content1, "first")
-      assertEquals(content2, "second")
+      val contents = codes.map(f => scala.io.Source.fromFile(f).mkString).toSet
+      assert(contents.contains("first"))
+      assert(contents.contains("second"))
 
       val results = resultFiles(dir)
       assertEquals(results.length, 2)
-      assert(scala.io.Source.fromFile(results(0)).mkString.contains("out1"))
-      assert(scala.io.Source.fromFile(results(1)).mkString.contains("out2"))
+      val resultContents = results.map(f => scala.io.Source.fromFile(f).mkString)
+      assert(resultContents.exists(_.contains("out1")))
+      assert(resultContents.exists(_.contains("out2")))
     }
