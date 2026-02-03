@@ -3,13 +3,24 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
 import java.io.{BufferedReader, InputStreamReader, PrintWriter}
+import executor.CodeRecorder
 
 /** SafeExecMCP - A Model Context Protocol server for safe Scala code execution */
-@main def SafeExecMCP(): Unit =
-  val server = new McpServer()
+@main def SafeExecMCP(args: String*): Unit =
+  // Parse --record <dir> from CLI args
+  val recordDir: Option[String] =
+    val idx = args.indexOf("--record")
+    if idx >= 0 && idx + 1 < args.length then Some(args(idx + 1))
+    else None
+
+  val recorder: Option[CodeRecorder] = recordDir.map { dir =>
+    new CodeRecorder(java.io.File(dir))
+  }
+
+  val server = new McpServer(recorder)
   val reader = new BufferedReader(new InputStreamReader(System.in))
   val writer = new PrintWriter(System.out, true)
-  
+
   // Log to stderr so it doesn't interfere with JSON-RPC communication
   def log(msg: String): Unit =
     System.err.println(s"[SafeExecMCP] $msg")
@@ -19,6 +30,9 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
       new java.io.File(classOf[McpServer].getProtectionDomain.getCodeSource.getLocation.toURI).getAbsolutePath
     }.getOrElse("<path/to/SafeExecMCP-assembly-0.1.0-SNAPSHOT.jar>")
     val cwd = System.getProperty("user.dir")
+    val recordingStatus = recordDir match
+      case Some(dir) => s"Recording: ON -> $dir"
+      case None      => "Recording: OFF"
 
     System.err.println(
       s"""
@@ -27,6 +41,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
          |╠══════════════════════════════════════════════════════════════════╣
          |║  Transport: stdio (JSON-RPC 2.0)                                 ║
          |║  Protocol:  Model Context Protocol (MCP)                         ║
+         |║  $recordingStatus
          |╚══════════════════════════════════════════════════════════════════╝
          |
          |Available tools: execute_scala, create_repl_session, execute_in_session,
@@ -59,7 +74,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
          |""".stripMargin)
 
   printStartupBanner()
-  
+
   try
     var running = true
     while running do
@@ -68,7 +83,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
         running = false
       else if line.trim.nonEmpty then
         log(s"Received: ${line.take(200)}...")
-        
+
         parse(line) match
           case Left(error) =>
             val response = JsonRpcResponse.error(
@@ -77,7 +92,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
               s"Parse error: ${error.message}"
             )
             sendResponse(writer, response)
-            
+
           case Right(json) =>
             json.as[JsonRpcRequest] match
               case Left(error) =>
@@ -87,7 +102,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
                   s"Invalid request: ${error.message}"
                 )
                 sendResponse(writer, response)
-                
+
               case Right(request) =>
                 server.handleRequest(request).foreach { response =>
                   sendResponse(writer, response)
@@ -97,6 +112,7 @@ import java.io.{BufferedReader, InputStreamReader, PrintWriter}
       log(s"Error: ${e.getMessage}")
       e.printStackTrace(System.err)
   finally
+    recorder.foreach(_.close())
     log("Server shutting down...")
 
 def sendResponse(writer: PrintWriter, response: JsonRpcResponse): Unit =
