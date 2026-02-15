@@ -113,6 +113,26 @@ class LibraryIntegrationSuite extends munit.FunSuite:
       "no given instance of type library.Network"
     )
 
+  test("println inside Classified.map is rejected by capture checker"):
+    assertCompileError(
+      """
+      val secret = classify("password")
+      secret.map(x => { println(x); x })
+      """,
+      "capture"
+    )
+
+  test("write inside Classified.map is rejected by capture checker"):
+    assertCompileError(
+      """
+      val secret = classify("password")
+      requestFileSystem("/tmp") {
+        secret.map(x => { access("/tmp/secret.txt").write(x); x })
+      }
+      """,
+      "capture"
+    )
+
   test("session preserves state across library calls"):
     val manager = new SessionManager
     val sessionId = manager.createSession()

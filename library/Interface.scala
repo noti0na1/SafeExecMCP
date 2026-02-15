@@ -2,57 +2,32 @@ package library
 
 import language.experimental.captureChecking
 
-// ─── Classified ─────────────────────────────────────────────────────────────
+// ─── Classified Data ────────────────────────────────────────────────────────
 
-/** A wrapper that protects sensitive data from accidental disclosure.
+/** Wrapper that protects sensitive data from accidental disclosure.
  *
- *  `Classified[T]` ensures that:
- *   - `toString` never reveals the underlying value
- *   - `map` and `flatMap` only accept **pure** functions (`T -> B`),
- *     preventing side-channel leaks through captured capabilities
- *   - The underlying value is only accessible within library-internal code
+ *  - `toString` never reveals the underlying value (prints `Classified(****)`)
+ *  - `map`/`flatMap` only accept **pure** functions, preventing side-channel leaks
  */
 trait Classified[+T]:
-  /** Transform the classified value with a pure function. */
   def map[B](op: T -> B): Classified[B]
-  /** Chain classified computations with a pure function. */
   def flatMap[B](op: T -> Classified[B]): Classified[B]
 
 // ─── File System ────────────────────────────────────────────────────────────
 
-/** A handle to a single file or directory obtained from a [[FileSystem]].
- *
- *  `FileEntry` is always tied to the [[FileSystem]] that created it via the
- *  tracked `origin` field, so the compiler's capture checker guarantees it
- *  cannot outlive the scope of `requestFileSystem`.
- *
- *  The entry is lazy: metadata such as `exists` and `size` are read on each
- *  call, and `write` / `append` create parent directories as needed.
- */
+/** Handle to a file or directory, obtained via `access(path)` inside a
+ *  `requestFileSystem` block. Cannot escape the block scope. */
 abstract class FileEntry(tracked val origin: FileSystem):
-  /** Absolute path of this entry. */
   def path: String
-  /** File or directory name (last component of the path). */
   def name: String
-  /** Whether the file or directory exists. */
   def exists: Boolean
-  /** Whether this entry is a directory. */
   def isDirectory: Boolean
-  /** Size of the file in bytes (0 for directories). */
   def size: Long
-  /** Read the entire file as a UTF-8 string. */
   def read(): String
-  /** Read the entire file as raw bytes. */
   def readBytes(): Array[Byte]
-  /** Write `content` to the file, creating it if it doesn't exist and
-   *  overwriting any previous content. Parent directories are created
-   *  automatically. */
   def write(content: String): Unit
-  /** Append `content` to the end of the file. */
   def append(content: String): Unit
-  /** Read the file and return each line as a list element. */
   def readLines(): List[String]
-  /** Delete the file. Throws if the file does not exist. */
   def delete(): Unit
   /** List immediate children of a directory. */
   def children: List[FileEntry^{origin}]
@@ -61,23 +36,18 @@ abstract class FileEntry(tracked val origin: FileSystem):
   /** Whether this file is under a classified (protected) path. */
   def isClassified: Boolean
   /** Read a classified file, returning its content wrapped in [[Classified]].
-   *  Throws `SecurityException` if the file is not classified. */
+   *  Throws `SecurityException` if the file is not under a classified path. */
   def readClassified(): Classified[String]
   /** Write classified content to a classified file.
-   *  Throws `SecurityException` if the file is not classified. */
+   *  Throws `SecurityException` if the file is not under a classified path. */
   def writeClassified(content: Classified[String]): Unit
 
-/** A capability that grants scoped access to a file-system subtree.
- *
- *  `FileSystem` extends `caps.SharedCapability`, which means it can be
- *  shared across closures inside the same `requestFileSystem` block but
- *  the capture checker prevents it from escaping that block. */
+/** Capability granting access to a file-system subtree.
+ *  Obtained via `requestFileSystem(root)`. */
 abstract class FileSystem extends caps.SharedCapability:
-  /** Obtain a [[FileEntry]] for `path`. Throws `SecurityException` if
-   *  the path is outside the allowed root. */
   def access(path: String): FileEntry^{this}
 
-// ─── Data types ─────────────────────────────────────────────────────────────
+// ─── Data Types ─────────────────────────────────────────────────────────────
 
 /** A single match returned by `grep` or `grepRecursive`. */
 case class GrepMatch(file: String, lineNumber: Int, line: String)
@@ -85,13 +55,10 @@ case class GrepMatch(file: String, lineNumber: Int, line: String)
 /** The result of running a process via `exec`. */
 case class ProcessResult(exitCode: Int, stdout: String, stderr: String)
 
-// ─── Other Capabilities ───────────────────────────────────────────────────────────
+// ─── Capabilities ───────────────────────────────────────────────────────────
 
-/** A capability that grants scoped access to a set of network hosts.
- *
- *  Only hosts in `allowedHosts` may be contacted; any other host causes
- *  a `SecurityException`. Like all capabilities in this library, it
- *  cannot escape the `requestNetwork` block. */
+/** Capability granting access to a set of network hosts.
+ *  Obtained via `requestNetwork(hosts)`. */
 class Network(val allowedHosts: Set[String]) extends caps.SharedCapability:
   def validateHost(host: String): Unit =
     if !allowedHosts.contains(host) then
@@ -99,173 +66,97 @@ class Network(val allowedHosts: Set[String]) extends caps.SharedCapability:
         s"Access denied: host '$host' is not in allowed hosts $allowedHosts"
       )
 
-/** A capability that grants scoped permission to run a set of commands.
- *
- *  Only commands in `allowedCommands` may be executed; any other command
- *  causes a `SecurityException`.
- *
- *  In strict mode, file operation commands are also blocked to enforce
- *  proper use of `requestFileSystem` for file access. */
+/** Capability granting permission to run a set of commands.
+ *  Obtained via `requestExecPermission(commands)`.
+ *  In strict mode, file-operation commands (cat, ls, rm, ...) are also blocked. */
 class ProcessPermission(
   val allowedCommands: Set[String],
   val strictMode: Boolean = false
 ) extends caps.SharedCapability
 
+/** Capability gating access to standard output (`println`, `print`, `printf`).
+ *  An implciit instance is available at the REPL top level. */
+class IOCapability private extends caps.SharedCapability
+
 // ─── Interface ──────────────────────────────────────────────────────────────
 
-/** The main entry point for agents to interact with the host system.
- *
- *  Every operation that touches the outside world (files, processes, network)
- *  requires a corresponding **capability** that is obtained through a
- *  `request*` method. Capabilities are scoped: they exist only inside the
- *  callback and the compiler's capture checker ensures they cannot leak out.
- *
- *  == Capability model ==
- *
- *  There are three capability types, each granted by a `request*` method:
- *
- *   - [[FileSystem]]         — granted by `requestFileSystem`
- *   - [[ProcessPermission]]  — granted by `requestExecPermission`
- *   - [[Network]]            — granted by `requestNetwork`
- *
- *  Once inside a `request*` block the capability is available as a context
- *  parameter (`using`), so helper methods like `access`, `exec`, and
- *  `httpGet` pick it up automatically.
- *
- *  == Quick example ==
- *
- *  {{{
- *  // An interface instance is assumed to be in scope and imported
- *
- *  // Read a file
- *  requestFileSystem("/home/user/project") {
- *    val entry = access("/home/user/project/README.md")
- *    println(entry.read())
- *  }
- *
- *  // Run a command
- *  requestExecPermission(Set("ls", "cat")) {
- *    val result = exec("ls", List("-la"))
- *    println(result.stdout)
- *  }
- *
- *  // Fetch a URL
- *  requestNetwork(Set("api.example.com")) {
- *    val body = httpGet("https://api.example.com/data")
- *    println(body)
- *  }
- *  }}}
- *
- *  == Combining capabilities ==
- *
- *  Blocks can be nested to use multiple capabilities together:
- *
- *  {{{
- *  requestFileSystem("/tmp/out") {
- *    requestNetwork(Set("api.example.com")) {
- *      val data = httpGet("https://api.example.com/data")
- *      access("/tmp/out/result.json").write(data)
- *    }
- *  }
- *  }}}
- *
- *  == Safety guarantees ==
- *
- *  Because capabilities extend `caps.SharedCapability` and the library is
- *  compiled with `-language:experimental.captureChecking`, the following
- *  is rejected at compile time:
- *
- *  {{{
- *  var leaked: FileEntry^ = _
- *  requestFileSystem("/tmp") {
- *    leaked = access("/tmp/secret.txt") // Compile-time error!
- *  }
- *  }}}
- */
+/** The API for interacting with the host system. All the functions are pre-loaded 
+ *  at the REPL top level. */
 trait Interface:
 
-  // ── File system ───────────────────────────────────────────────────────
+  // ── File System ─────────────────────────────────────────────────────
 
-  /** Request a [[FileSystem]] capability rooted at `root`.
-   *
-   *  All file operations inside `op` are confined to the subtree under
-   *  `root`. Accessing a path outside that subtree throws
-   *  `SecurityException`.
+  /** Request a [[FileSystem]] scoped to the subtree under `root`.
+   *  Paths outside `root` throw `SecurityException`.
    *
    *  {{{
    *  requestFileSystem("/home/user/project") {
-   *    val readme = access("/home/user/project/README.md")
-   *    println(readme.read())
+   *    val content = access("/home/user/project/README.md").read()
+   *    println(content)
+   *
+   *    access("/home/user/project/out/result.txt").write("done")
+   *
+   *    access("/home/user/project/src").children.foreach(f => println(f.name))
    *  }
    *  }}} */
   def requestFileSystem[T](root: String)(op: FileSystem^ ?=> T): T
 
-  /** Get a [[FileEntry]] handle for the given absolute path.
-   *  Requires a [[FileSystem]] capability in scope. */
+  /** Get a [[FileEntry]] handle for `path`. */
   def access(path: String)(using fs: FileSystem): FileEntry^{fs}
 
-  /** Search `path` (a single file) for lines matching `pattern` (regex).
-   *  Returns a list of [[GrepMatch]] with file path, 1-based line number,
-   *  and the matching line content.
+  /** Search a single file for lines matching `pattern` (regex).
    *
    *  {{{
-   *  requestFileSystem("/project") {
-   *    val matches = grep("/project/Main.scala", "TODO")
-   *    matches.foreach(m => println(s"${m.lineNumber}: ${m.line}"))
-   *  }
+   *  val matches = grep("/project/Main.scala", "TODO")
+   *  matches.foreach(m => println(s"${m.lineNumber}: ${m.line}"))
    *  }}} */
-  def grep(path: String, pattern: String)(using fs: FileSystem): List[GrepMatch]
+  def grep(path: String, pattern: String)(using FileSystem): List[GrepMatch]
 
-  /** Recursively search all files under `dir` whose names match `glob`
-   *  for lines matching `pattern` (regex).
+  /** Recursively search files under `dir` matching `glob` for `pattern` (regex).
    *
    *  {{{
-   *  requestFileSystem("/project") {
-   *    val hits = grepRecursive("/project/src", "deprecated", "*.scala")
-   *  }
+   *  val hits = grepRecursive("/project/src", "deprecated", "*.scala")
+   *  hits.foreach(m => println(s"${m.file}:${m.lineNumber}: ${m.line}"))
    *  }}} */
-  def grepRecursive(dir: String, pattern: String, glob: String = "*")(using fs: FileSystem): List[GrepMatch]
+  def grepRecursive(dir: String, pattern: String, glob: String = "*")(using FileSystem): List[GrepMatch]
 
-  /** Recursively find all files under `dir` whose names match `glob`.
-   *  Returns a list of absolute paths.
+  /** Find all files under `dir` matching `glob`. Returns absolute paths.
    *
    *  {{{
-   *  requestFileSystem("/project") {
-   *    val scalaFiles = find("/project/src", "*.scala")
-   *  }
+   *  val files = find("/project/src", "*.scala")
    *  }}} */
-  def find(dir: String, glob: String)(using fs: FileSystem): List[String]
+  def find(dir: String, glob: String)(using FileSystem): List[String]
 
-  /** Read a classified file by path. Shorthand for `access(path).readClassified()`. */
-  def readClassified(path: String)(using fs: FileSystem): Classified[String]
-
-  /** Write classified content to a file by path. Shorthand for `access(path).writeClassified(content)`. */
-  def writeClassified(path: String, content: Classified[String])(using fs: FileSystem): Unit
-
-  // ── Process execution ─────────────────────────────────────────────────
-
-  /** Request a [[ProcessPermission]] capability for the given set of
-   *  command names.
-   *
-   *  Only the listed commands may be executed inside `op`; attempting to
-   *  run anything else throws `SecurityException`.
+  /** Read a classified file. Throws `SecurityException` if the path is not classified.
    *
    *  {{{
-   *  requestExecPermission(Set("ls", "grep")) {
-   *    val dirs = exec("ls", List("-la"))
-   *    println(dirs.stdout)
+   *  val secret: Classified[String] = readClassified("/data/secrets/key.txt")
+   *  val processed = secret.map(_.trim.toUpperCase)  // pure transform OK
+   *  println(processed)  // prints "Classified(****)" — content protected
+   *  }}} */
+  def readClassified(path: String)(using FileSystem): Classified[String]
+
+  /** Write classified content to a classified file.
+   *
+   *  {{{
+   *  writeClassified("/data/secrets/upper.txt", processed)
+   *  }}} */
+  def writeClassified(path: String, content: Classified[String])(using FileSystem): Unit
+
+  // ── Process Execution ───────────────────────────────────────────────
+
+  /** Request a [[ProcessPermission]] for the given command names.
+   *
+   *  {{{
+   *  requestExecPermission(Set("pip", "python")) {
+   *    exec("pip", List("install", "."))
+   *    execOutput("python", List("script.py"))
    *  }
    *  }}} */
   def requestExecPermission[T](commands: Set[String])(op: ProcessPermission^ ?=> T): T
 
-  /** Execute `command` with `args` and return a [[ProcessResult]] containing
-   *  the exit code, stdout, and stderr.
-   *
-   *  @param command    the executable name (must be in the allowed set)
-   *  @param args       command-line arguments
-   *  @param workingDir optional working directory
-   *  @param timeoutMs  maximum time to wait (default 30 000 ms); throws
-   *                    `RuntimeException` on timeout */
+  /** Run `command` with `args`. Returns exit code, stdout, and stderr.
+   *  Throws `RuntimeException` on timeout. */
   def exec(
     command: String,
     args: List[String] = List.empty,
@@ -273,57 +164,57 @@ trait Interface:
     timeoutMs: Long = 30000
   )(using pp: ProcessPermission): ProcessResult
 
-  /** Convenience wrapper around `exec` that returns only stdout.
-   *
-   *  {{{
-   *  requestExecPermission(Set("date")) {
-   *    val today = execOutput("date")
-   *  }
-   *  }}} */
+  /** Run `command` and return only stdout. */
   def execOutput(
     command: String,
     args: List[String] = List.empty
   )(using pp: ProcessPermission): String
 
-  // ── Network ───────────────────────────────────────────────────────────
+  // ── Network ─────────────────────────────────────────────────────────
 
-  /** Request a [[Network]] capability for the given set of host names.
-   *
-   *  Only the listed hosts may be contacted inside `op`; connecting to
-   *  any other host throws `SecurityException`.
+  /** Request a [[Network]] capability for the given host names.
    *
    *  {{{
    *  requestNetwork(Set("api.example.com")) {
    *    val body = httpGet("https://api.example.com/v1/status")
-   *    println(body)
+   *    val resp = httpPost("https://api.example.com/v1/data",
+   *                        """{"key": "value"}""")
    *  }
    *  }}} */
   def requestNetwork[T](hosts: Set[String])(op: Network^ ?=> T): T
 
-  /** Perform an HTTP GET request and return the response body as a string.
-   *  The host in `url` must be in the allowed set. */
+  /** HTTP GET. Returns the response body. Host must be in the allowed set. */
   def httpGet(url: String)(using net: Network): String
 
-  /** Perform an HTTP POST request with `data` as the body and return the
-   *  response body as a string.
-   *
-   *  @param url         target URL (host must be allowed)
-   *  @param data        request body
-   *  @param contentType MIME type of the body (default `application/json`) */
+  /** HTTP POST with `data` as body. Returns the response body. */
   def httpPost(url: String, data: String, contentType: String = "application/json")(using net: Network): String
 
-  // ── Classified ─────────────────────────────────────────────────────
-  /** Create a [[Classified]] value wrapping `value`. */
+  // ── print ─────────────────────────────────────────────────────────-
+
+  def println(x: Any)(using IOCapability): Unit
+  def println()(using IOCapability): Unit
+  def print(x: Any)(using IOCapability): Unit
+  def printf(fmt: String, args: Any*)(using IOCapability): Unit
+
+  // ── Classified ──────────────────────────────────────────────────────
+
+  /** Wrap a value in [[Classified]] to protect it from disclosure. */
   def classify[T](value: T): Classified[T]
 
   // ── LLM ─────────────────────────────────────────────────────────────
 
-  /** Send a message to the configured LLM and return its response.
-   *  Always available — no capability scope required.
+  /** Send a message to the configured LLM. No capability scope required.
+   *  Throws `RuntimeException` if no LLM is configured.
    *
-   *  Throws `RuntimeException` if no LLM is configured. */
+   *  {{{
+   *  val answer = chat("What is the capital of Switzerland?")
+   *  }}} */
   def chat(message: String): String
 
-  /** Send a classified message to the configured LLM and return a classified response.
-   *  The underlying value is never exposed outside the [[Classified]] wrapper. */
+  /** Send a classified message. Returns a classified response.
+   *
+   *  {{{
+   *  val secret = readClassified("/data/secrets/question.txt")
+   *  val summary: Classified[String] = chat(secret.map(q => s"Summarize the following: $q"))
+   *  }}} */
   def chat(message: Classified[String]): Classified[String]

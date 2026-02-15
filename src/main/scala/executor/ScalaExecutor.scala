@@ -51,6 +51,7 @@ private object ReplClasspath:
       "-feature",
       "-unchecked",
       "-Yexplicit-nulls",
+      // "-Yno-predef",
       "-Wsafe-init",
       "-language:experimental.captureChecking",
       "-language:experimental.modularity"
@@ -79,6 +80,8 @@ private def libraryPreamble(
       |  $llmConfigExpr
       |)
       |import api.*
+      |// import Predef.{print => _, println => _, printf => _, readLine => _, readInt => _, readDouble => _}
+      |given IOCapability = null.asInstanceOf[IOCapability]
       |""".stripMargin
 
 /** A REPL session that maintains state across executions */

@@ -1,5 +1,7 @@
 // val scala3Version = "3.8.1"
-val scala3Version = "3.8.2-RC3"
+// val scala3Version = "3.8.2-RC3"
+val scala3Version = "3.8.3-RC1-bin-20260215-f10f20d-NIGHTLY"
+ThisBuild / resolvers += Resolver.scalaNightlyRepository
 
 lazy val lib = project
   .in(file("library"))

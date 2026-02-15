@@ -11,9 +11,18 @@ case class Config(
 )
 
 object Config:
+  private def warn(msg: String): Unit =
+    System.err.println(s"[SafeExecMCP][config] WARNING: $msg")
+
   private def mergeFromFile(base: Config, path: String): Config =
     import io.circe.parser.{parse => parseJson}
-    val source = scala.io.Source.fromFile(path)
+    val file = java.io.File(path)
+    if !file.exists() then
+      throw RuntimeException(s"Config file not found: '$path'")
+    if !file.canRead then
+      throw RuntimeException(s"Config file is not readable: '$path'")
+
+    val source = scala.io.Source.fromFile(file)
     val content = try source.mkString finally source.close()
     val json = parseJson(content) match
       case Left(err) => throw RuntimeException(s"Failed to parse config file '$path': ${err.message}")
@@ -25,11 +34,17 @@ object Config:
       .map(_.toSet).getOrElse(base.classifiedPaths)
     val llmConfig = cursor.downField("llm").focus.flatMap { llmJson =>
       val c = llmJson.hcursor
-      for
-        baseUrl <- c.get[String]("baseUrl").toOption
-        apiKey  <- c.get[String]("apiKey").toOption
-        model   <- c.get[String]("model").toOption
-      yield LlmConfig(baseUrl, apiKey, model)
+      val baseUrl = c.get[String]("baseUrl").toOption
+      val apiKey  = c.get[String]("apiKey").toOption
+      val model   = c.get[String]("model").toOption
+      (baseUrl, apiKey, model) match
+        case (Some(b), Some(a), Some(m)) => Some(LlmConfig(b, a, m))
+        case (None, None, None) => None
+        case _ =>
+          val missing = Seq("baseUrl" -> baseUrl, "apiKey" -> apiKey, "model" -> model)
+            .collect { case (name, None) => name }
+          warn(s"Incomplete LLM config in '$path': missing ${missing.mkString(", ")}. LLM config ignored.")
+          None
     }.orElse(base.llmConfig)
     base.copy(
       recordPath = recordPath,
@@ -37,6 +52,18 @@ object Config:
       classifiedPaths = classifiedPaths,
       llmConfig = llmConfig,
     )
+
+  /** Validate that LlmConfig doesn't have empty-string fields (from partial CLI flags). */
+  private def validateLlmConfig(config: Config): Config =
+    config.llmConfig match
+      case Some(llm) =>
+        val missing = Seq("baseUrl" -> llm.baseUrl, "apiKey" -> llm.apiKey, "model" -> llm.model)
+          .collect { case (name, v) if v.isEmpty => name }
+        if missing.nonEmpty then
+          warn(s"Incomplete LLM config: missing ${missing.mkString(", ")}. LLM config ignored.")
+          config.copy(llmConfig = None)
+        else config
+      case None => config
 
   val optParser =
     val builder = OParser.builder[Config]
@@ -76,4 +103,4 @@ object Config:
     )
 
   def parseCliArgs(args: Array[String]): Option[Config] =
-    OParser.parse(optParser, args, Config())
+    OParser.parse(optParser, args, Config()).map(validateLlmConfig)

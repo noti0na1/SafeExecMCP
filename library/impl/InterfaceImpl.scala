@@ -16,6 +16,14 @@ class InterfaceImpl(
   private val llmOps = new LlmOps(llmConfig)
   export llmOps.chat
 
+  def println(x: Any)(using IOCapability): Unit = scala.Predef.println(x)
+  
+  def println()(using IOCapability): Unit = scala.Predef.println()
+
+  def print(x: Any)(using IOCapability): Unit = scala.Predef.print(x)
+
+  def printf(fmt: String, args: Any*)(using IOCapability): Unit = scala.Predef.printf(fmt, args*)
+
   def requestFileSystem[T](root: String)(op: FileSystem^ ?=> T): T =
     val rootPath = Path.of(root).toAbsolutePath.normalize
     val relevantClassified = classifiedPaths
