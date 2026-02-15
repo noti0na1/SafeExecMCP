@@ -58,6 +58,12 @@ object CodeValidator:
     ForbiddenPattern("jvm-sun", raw"\bsun\.\w+".r, "sun.* access is forbidden"),
     ForbiddenPattern("jvm-com-sun", raw"com\.sun\.\w+".r, "com.sun.* access is forbidden"),
 
+    // IO bypass — prevent circumventing shadowed println/print
+    ForbiddenPattern("io-system-out", raw"System\.out\b".r, "System.out is forbidden; use println (which requires IOCapability)"),
+    ForbiddenPattern("io-system-err", raw"System\.err\b".r, "System.err is forbidden; use println (which requires IOCapability)"),
+    ForbiddenPattern("io-console", raw"\bConsole\b".r, "scala.Console is forbidden; use println (which requires IOCapability)"),
+    ForbiddenPattern("io-predef-print", raw"Predef\.print".r, "Predef.println/print is forbidden; use the shadowed version"),
+
     // System control
     ForbiddenPattern("sys-exit", raw"System\.exit".r, "System.exit is forbidden"),
     ForbiddenPattern("sys-setprop", raw"System\.setProperty".r, "System.setProperty is forbidden"),

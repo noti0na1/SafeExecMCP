@@ -51,19 +51,37 @@ private object ReplClasspath:
       "-feature",
       "-unchecked",
       "-Yexplicit-nulls",
+      // "-Yno-predef",
       "-Wsafe-init",
       "-language:experimental.captureChecking",
       "-language:experimental.modularity"
     )
 
 /** Preamble code injected before user code to make the library API available. */
-private def libraryPreamble(strictMode: Boolean): String =
+private def libraryPreamble(
+  strictMode: Boolean,
+  classifiedPaths: Set[String],
+  llmConfig: Option[library.LlmConfig]
+): String =
+  val classifiedExpr =
+    if classifiedPaths.isEmpty then "Set.empty[java.nio.file.Path]"
+    else classifiedPaths
+      .map(p => s"""java.nio.file.Path.of("$p").toAbsolutePath.normalize""")
+      .mkString("Set(", ", ", ")")
+  def esc(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+  val llmConfigExpr = llmConfig match
+    case None => "None"
+    case Some(cfg) => s"""Some(LlmConfig("${esc(cfg.baseUrl)}", "${esc(cfg.apiKey)}", "${esc(cfg.model)}"))"""
   s"""|import library.*
       |val api: Interface = new InterfaceImpl(
-      |  (root, check) => new RealFileSystem(java.nio.file.Path.of(root), check),
-      |  $strictMode
+      |  (root, check, classified) => new RealFileSystem(java.nio.file.Path.of(root), check, classified),
+      |  $strictMode,
+      |  $classifiedExpr,
+      |  $llmConfigExpr
       |)
       |import api.*
+      |// import Predef.{print => _, println => _, printf => _, readLine => _, readInt => _, readDouble => _}
+      |given IOCapability = null.asInstanceOf[IOCapability]
       |""".stripMargin
 
 /** A REPL session that maintains state across executions */
@@ -79,7 +97,7 @@ class ReplSession(val id: String)(using Context):
   private var state: State =
     val s0 = driver.initialState
     // Run preamble once to make library API available in the session
-    driver.run(libraryPreamble(ctx.strictMode))(using s0)
+    driver.run(libraryPreamble(ctx.strictMode, ctx.classifiedPaths, ctx.llmConfig))(using s0)
 
   /** Execute code in this session and return the result */
   def execute(code: String): ExecutionResult =
@@ -174,7 +192,7 @@ object ScalaExecutor:
       )
       var state = driver.initialState
       // Run preamble to make library API available
-      state = driver.run(libraryPreamble(ctx.strictMode))(using state)
+      state = driver.run(libraryPreamble(ctx.strictMode, ctx.classifiedPaths, ctx.llmConfig))(using state)
       outputCapture.reset()
 
       val oldOut = System.out

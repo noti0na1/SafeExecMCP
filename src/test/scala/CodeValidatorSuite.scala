@@ -120,6 +120,34 @@ class CodeValidatorSuite extends munit.FunSuite:
     assert(result.isLeft)
     assert(result.left.exists(_.exists(_.ruleId == "jvm-com-sun")))
 
+  test("reject System.out"):
+    val result = CodeValidator.validate("System.out.println(\"hello\")")
+    assert(result.isLeft)
+    assert(result.left.exists(_.exists(_.ruleId == "io-system-out")))
+
+  test("reject System.err"):
+    val result = CodeValidator.validate("System.err.println(\"hello\")")
+    assert(result.isLeft)
+    assert(result.left.exists(_.exists(_.ruleId == "io-system-err")))
+
+  test("reject Console"):
+    val result = CodeValidator.validate("Console.println(\"hello\")")
+    assert(result.isLeft)
+    assert(result.left.exists(_.exists(_.ruleId == "io-console")))
+
+  test("reject Predef.print"):
+    val result = CodeValidator.validate("scala.Predef.println(\"hello\")")
+    assert(result.isLeft)
+    assert(result.left.exists(_.exists(_.ruleId == "io-predef-print")))
+
+  test("allow System.out in string literal"):
+    val result = CodeValidator.validate("""println("System.out is just text")""")
+    assert(result.isRight)
+
+  test("allow Console in string literal"):
+    val result = CodeValidator.validate("""println("Console is just text")""")
+    assert(result.isRight)
+
   test("reject System.exit"):
     val result = CodeValidator.validate("System.exit(0)")
     assert(result.isLeft)
