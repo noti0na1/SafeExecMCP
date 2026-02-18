@@ -44,7 +44,7 @@ class RealFileSystem(
         s"Access denied: '$op' is only allowed on classified paths, but $jpath is not classified."
       )
 
-  private class FileEntryImpl(jpath: Path) extends FileEntry(RealFileSystem.this):
+  private class FileEntryImpl(jpath: Path) extends FileEntry(this):
     def path: String = jpath.toString
     def name: String = jpath.getFileName.nn.toString
     def read(): String =
@@ -79,13 +79,13 @@ class RealFileSystem(
     def isDirectory: Boolean = Files.isDirectory(jpath)
     def size: Long = Files.size(jpath)
 
-    def children: List[FileEntry^{RealFileSystem.this}] =
+    def children: List[FileEntry^{origin}] =
       requireNotClassified(jpath, "children")
       Files.list(jpath).nn.iterator.nn.asScala
         .map(p => new FileEntryImpl(p))
         .toList
 
-    def walk(): List[FileEntry^{RealFileSystem.this}] =
+    def walk(): List[FileEntry^{origin}] =
       requireNotClassified(jpath, "walk")
       val paths = ListBuffer[Path]()
       Files.walkFileTree(jpath, new SimpleFileVisitor[Path]:

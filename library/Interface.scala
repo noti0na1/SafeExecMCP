@@ -30,9 +30,9 @@ abstract class FileEntry(tracked val origin: FileSystem):
   def readLines(): List[String]
   def delete(): Unit
   /** List immediate children of a directory. */
-  def children: List[FileEntry^{origin}]
+  def children: List[FileEntry^{this}]
   /** Recursively list all descendants (files and subdirectories). */
-  def walk(): List[FileEntry^{origin}]
+  def walk(): List[FileEntry^{this}]
   /** Whether this file is under a classified (protected) path. */
   def isClassified: Boolean
   /** Read a classified file, returning its content wrapped in [[Classified]].
