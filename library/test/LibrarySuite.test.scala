@@ -15,6 +15,8 @@ class LibrarySuite extends munit.FunSuite:
 
   import interface.*
 
+  given iocap: (IOCapability^{}) = null.asInstanceOf[IOCapability]
+
   override def afterEach(context: AfterEach): Unit =
     if Files.exists(tmpDir) then
       Files.walk(tmpDir).sorted(java.util.Comparator.reverseOrder())
@@ -188,6 +190,26 @@ class LibrarySuite extends munit.FunSuite:
       // readClassified on non-classified throws
       intercept[SecurityException] { pub.readClassified() }
     }
+  }
+
+  test("calling foreach(println) on the result of grepRecursive") {
+    val dirPath = tmpDir.toString
+    val matches = requestFileSystem(dirPath) {
+      grepRecursive(dirPath, "line", "*.txt").map(m => s"Match in ${m.file}: ${m.line}")
+    }
+    // matches.foreach(println)
+
+    val (projects, webappContents) = requestFileSystem(dirPath) {
+      val projectsList = find(dirPath, "*")
+      val webappList = find(dirPath, "*")
+      (projectsList, webappList)
+    }
+
+    // println("Projects directory contents:")
+    // projects.foreach(p => println(p))
+    // println("\n---\n")
+    // println("Webapp directory contents:")
+    // webappContents.foreach(p => println(p))
   }
 
   // --- Compile-time capability leak examples ---

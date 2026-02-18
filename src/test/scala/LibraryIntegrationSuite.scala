@@ -81,6 +81,30 @@ class LibraryIntegrationSuite extends munit.FunSuite:
 
     manager.deleteSession(sessionId)
 
+  
+  test("calling foreach(println) on the result of grepRecursive"):
+    val result = ScalaExecutor.execute("""
+      requestFileSystem(".") {
+        val allEntries = access("./projects/webapp").walk()
+
+        // Collect info as plain strings first, then print outside the lambda
+        val lines = allEntries.map(e => s"${if e.isDirectory then "[DIR] " else "[FILE]"} ${e.path}")
+
+        lines.foreach(println)
+      }
+    """)
+    assert(result.success, s"execution failed: ${result.error.getOrElse(result.output)}")
+    assert(!result.output.contains("Type Mismatch Error"), s"unexpected output: ${result.output}")
+
+  test("filter out all non-file with walk on root"):
+    val result = ScalaExecutor.execute("""
+      requestFileSystem("/") {
+        access("/").walk().filterNot(_.isDirectory).map(_.path)
+      }
+    """)
+    assert(result.success, s"execution failed: ${result.error.getOrElse(result.output)}")
+    assert(!result.output.contains("Type Mismatch Error"), s"unexpected output: ${result.output}")
+
   // ── Negative tests: capture checking prevents capability leaks ──
 
   test("cannot leak FileEntry out of requestFileSystem"):

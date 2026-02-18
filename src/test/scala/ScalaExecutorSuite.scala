@@ -15,7 +15,7 @@ class ScalaExecutorSuite extends munit.FunSuite:
     assert(result.output.contains("Hello, World!"))
 
   test("execute val definition"):
-    val result = ScalaExecutor.execute("val x = 42")
+    val result = ScalaExecutor.execute("val x = 42\nprintln(x)")
     assert(result.success)
     assert(result.output.contains("42"))
 
@@ -28,7 +28,7 @@ class ScalaExecutorSuite extends munit.FunSuite:
     assert(result.output.contains("5"))
 
   test("handle syntax error"):
-    val result = ScalaExecutor.execute("val x = ")
+    val result = ScalaExecutor.execute("val x = def")
     // Should handle gracefully - either success=false or contains error in output
     assert(!result.success || result.output.toLowerCase.contains("error"))
 
@@ -36,6 +36,12 @@ class ScalaExecutorSuite extends munit.FunSuite:
     val result = ScalaExecutor.execute("List(1, 2, 3).map(_ * 2)")
     assert(result.success)
     assert(result.output.contains("List(2, 4, 6)"))
+
+  test("foreach println on List of String"):
+    val result = ScalaExecutor.execute("""List("hello", "world").foreach(println)""")
+    assert(result.success)
+    assert(result.output.contains("hello"))
+    assert(result.output.contains("world"))
 
   test("use scala.collection.Map"):
     val result = ScalaExecutor.execute("""Map("a" -> 1, "b" -> 2).values.toList.sorted""")

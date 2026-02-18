@@ -16,6 +16,7 @@ lazy val lib = project
     libraryDependencies += "com.openai" % "openai-java" % "4.21.0",
     scalacOptions ++= Seq(
       "-language:experimental.captureChecking",
+      // "-language:experimental.separationChecking",
       "-language:experimental.modularity",
       "-deprecation", "-feature", "-unchecked",
       "-Yexplicit-nulls", "-Wsafe-init"

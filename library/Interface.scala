@@ -80,8 +80,40 @@ class IOCapability private extends caps.SharedCapability
 
 // ─── Interface ──────────────────────────────────────────────────────────────
 
-/** The API for interacting with the host system. All the functions are pre-loaded 
- *  at the REPL top level. */
+/** The API for interacting with the host system. All the functions are pre-loaded
+ *  at the REPL top level.
+ *
+ *  == Example: basic file operations (write, read, list) ==
+ *
+ *  {{{
+ *  requestFileSystem("/tmp/demo") {
+ *    // Access a file or directory via `access()`
+ *    val f = access("/tmp/demo/hello.txt")
+ *    // Check file metadata
+ *    println(s"Name: ${f.name}, Size: ${f.size}, Exists: ${f.exists}")
+ *
+ *    // Write a file
+ *    f.write("Hello, World!\nLine 2")
+ *    // Read it back
+ *    val content = f.read()
+ *    println(s"Content: $content")
+ *    // Append to the file
+ *    f.append("\nLine 3")
+ *    // Read individual lines
+ *    val lines = f.readLines()
+ *    println(s"Lines: $lines")
+ *
+ *    // List directory contents
+ *    access("/tmp/demo").children.foreach { e =>
+ *      println(s"  ${e.name} (dir=${e.isDirectory}, size=${e.size})")
+ *    }
+ *    // Recursively list all files under the directory
+ *    access("/tmp/demo").walk().foreach { e =>
+ *      println(s"  ${e.path} (dir=${e.isDirectory}, size=${e.size})")
+ *    }
+ *  }
+ *  }}}
+ */
 trait Interface:
 
   // ── File System ─────────────────────────────────────────────────────

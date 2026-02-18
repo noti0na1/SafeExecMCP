@@ -54,6 +54,7 @@ private object ReplClasspath:
       // "-Yno-predef",
       "-Wsafe-init",
       "-language:experimental.captureChecking",
+      // "-language:experimental.separationChecking",
       "-language:experimental.modularity"
     )
 
@@ -79,10 +80,18 @@ private def libraryPreamble(
       |  $classifiedExpr,
       |  $llmConfigExpr
       |)
-      |import api.*
       |// import Predef.{print => _, println => _, printf => _, readLine => _, readInt => _, readDouble => _}
+      |import api.*
       |given IOCapability = null.asInstanceOf[IOCapability]
       |""".stripMargin
+
+/** Wraps user code in a `def run() = ...; run()` block to avoid capture checking REPL errors. */
+private def wrapCode(code: String, wrap: Boolean): String =
+  if !wrap then code
+  else
+    // val whitespace = code.takeWhile(_.isWhitespace)
+    val indented = code.linesIterator.map(line => s"  $line").mkString("\n")
+    s"def run()(using IOCapability): Any =\n$indented\nrun()"
 
 /** A REPL session that maintains state across executions */
 class ReplSession(val id: String)(using Context):
@@ -200,7 +209,7 @@ object ScalaExecutor:
       System.setOut(printStream)
       System.setErr(printStream)
       try
-        state = driver.run(code)(using state)
+        state = driver.run(wrapCode(code, ctx.wrappedCode))(using state)
       finally
         System.setOut(oldOut)
         System.setErr(oldErr)

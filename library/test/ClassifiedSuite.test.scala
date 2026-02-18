@@ -5,6 +5,8 @@ import language.experimental.captureChecking
 
 class ClassifiedSuite extends munit.FunSuite:
 
+  given iocap: (IOCapability^{}) = null.asInstanceOf[IOCapability]
+
   // ── Classified[T] unit tests ──────────────────────────────────────────
 
   test("Classified.apply creates a classified value") {

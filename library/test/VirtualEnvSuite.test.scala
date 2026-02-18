@@ -9,6 +9,8 @@ class VirtualEnvSuite extends munit.FunSuite:
 
   import interface.*
 
+  given iocap: (IOCapability^{}) = null.asInstanceOf[IOCapability]
+
   test("virtual: write and read back") {
     requestFileSystem("/virtual") {
       val file = access("/virtual/new.txt")

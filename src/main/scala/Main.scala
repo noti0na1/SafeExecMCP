@@ -82,7 +82,7 @@ import Context.*
             |Server ready. Waiting for JSON-RPC requests on stdin...
             |""".stripMargin)
 
-      printStartupBanner()
+      if !config.quiet then printStartupBanner()
 
       try
         var running = true
@@ -91,7 +91,7 @@ import Context.*
           if line == null then
             running = false
           else if line.trim.nonEmpty then
-            log(s"Received: ${line.take(200)}...")
+            if !config.quiet then log(s"Received: ${line.take(200)}...")
 
             parse(line) match
               case Left(error) =>
@@ -100,7 +100,7 @@ import Context.*
                   JsonRpcError.ParseError,
                   s"Parse error: ${error.message}"
                 )
-                sendResponse(writer, response)
+                sendResponse(writer, response, config.quiet)
 
               case Right(json) =>
                 json.as[JsonRpcRequest] match
@@ -110,22 +110,23 @@ import Context.*
                       JsonRpcError.InvalidRequest,
                       s"Invalid request: ${error.message}"
                     )
-                    sendResponse(writer, response)
+                    sendResponse(writer, response, config.quiet)
 
                   case Right(request) =>
                     server.handleRequest(request).foreach { response =>
-                      sendResponse(writer, response)
+                      sendResponse(writer, response, config.quiet)
                     }
       catch
         case e: Exception =>
           log(s"Error: ${e.getMessage}")
           e.printStackTrace(System.err)
       finally
-        log("Server shutting down...")
+        if !config.quiet then
+          log("Server shutting down...")
 
-def sendResponse(writer: PrintWriter, response: JsonRpcResponse): Unit =
+def sendResponse(writer: PrintWriter, response: JsonRpcResponse, quiet: Boolean = false): Unit =
   val json = response.asJson.noSpaces
-  System.err.println(s"[SafeExecMCP] Sending: ${json.take(200)}...")
+  if !quiet then System.err.println(s"[SafeExecMCP] Sending: ${json.take(200)}...")
   writer.println(json)
   writer.flush()
 

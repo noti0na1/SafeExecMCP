@@ -8,6 +8,8 @@ case class Config(
   strictMode: Boolean = false,
   classifiedPaths: Set[String] = Set.empty,
   llmConfig: Option[LlmConfig] = None,
+  quiet: Boolean = false,
+  wrappedCode: Boolean = true,
 )
 
 object Config:
@@ -30,6 +32,8 @@ object Config:
     val cursor = json.hcursor
     val recordPath = cursor.get[String]("recordPath").toOption.orElse(base.recordPath)
     val strictMode = cursor.get[Boolean]("strictMode").toOption.getOrElse(base.strictMode)
+    val quiet = cursor.get[Boolean]("quiet").toOption.getOrElse(base.quiet)
+    val wrappedCode = cursor.get[Boolean]("wrappedCode").toOption.getOrElse(base.wrappedCode)
     val classifiedPaths = cursor.downField("classifiedPaths").as[List[String]].toOption
       .map(_.toSet).getOrElse(base.classifiedPaths)
     val llmConfig = cursor.downField("llm").focus.flatMap { llmJson =>
@@ -51,6 +55,8 @@ object Config:
       strictMode = strictMode,
       classifiedPaths = classifiedPaths,
       llmConfig = llmConfig,
+      quiet = quiet,
+      wrappedCode = wrappedCode,
     )
 
   /** Validate that LlmConfig doesn't have empty-string fields (from partial CLI flags). */
@@ -79,6 +85,12 @@ object Config:
       opt[String]("classified-paths")
         .action((x, c) => c.copy(classifiedPaths = x.split(",").map(_.trim).filter(_.nonEmpty).toSet))
         .text("Comma-separated list of classified (protected) paths."),
+      opt[Unit]('q', "quiet")
+        .action((_, c) => c.copy(quiet = true))
+        .text("Suppress startup banner and request/response logging."),
+      opt[Unit]("no-wrap")
+        .action((_, c) => c.copy(wrappedCode = false))
+        .text("Disable wrapping user code in def run() = ... ; run() (workaround for capture checking REPL errors)."),
       opt[String]('c', "config")
         .action((x, c) => mergeFromFile(c, x))
         .text("Path to JSON config file."),
