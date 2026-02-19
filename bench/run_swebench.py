@@ -33,17 +33,14 @@ OPENCODE_BIN = os.environ.get(
     "OPENCODE_BIN",
     os.path.expanduser("~/.opencode/bin/opencode"),
 )
-SAFEXEC_JAR = os.environ.get(
-    "SAFEXEC_JAR",
-    # find the JAR at ../target/scala-*/SafeExecMCP-assembly-*-SNAPSHOT.jar
-    str(
-        next(
-            Path(__file__).resolve().parent.parent.glob(
-                "target/scala-*/SafeExecMCP-assembly-*-SNAPSHOT.jar"
-            )
-        )
-    ),
-)
+def _find_safexec_jar() -> str:
+    """Find the SafeExecMCP assembly JAR under ../target/scala-*/."""
+    project_root = Path(__file__).resolve().parent.parent
+    jars = sorted(project_root.glob("target/scala-*/SafeExecMCP-assembly-*.jar"))
+    if jars:
+        return str(jars[-1])
+    return str(project_root / "target" / "SafeExecMCP-assembly.jar")  # placeholder
+SAFEXEC_JAR = os.environ.get("SAFEXEC_JAR", _find_safexec_jar())
 MCP_CONFIG = os.environ.get(
     "MCP_CONFIG",
     str(Path(__file__).resolve().parent / "mcp_config.json"),
