@@ -1,0 +1,10 @@
+{
+  "recordPath": "./log",
+  "strictMode": true,
+  "classifiedPaths": [],
+  "llm": {
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "apiKey": "",
+    "model": "deepseek/deepseek-v3.2"
+  }
+}
