@@ -3,7 +3,7 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
 import java.io.{BufferedReader, InputStreamReader, PrintWriter}
-import config.Config
+import core.Config
 import core.*
 import Context.*
 
@@ -26,7 +26,9 @@ import Context.*
 
       // Log to stderr so it doesn't interfere with JSON-RPC communication
       def log(msg: String): Unit =
-        System.err.println(s"[SafeExecMCP] $msg")
+        if !config.quiet then System.err.println(s"[SafeExecMCP] $msg")
+      def error(msg: String): Unit =
+        System.err.println(s"[SafeExecMCP] ERROR: $msg")
 
       def printStartupBanner(): Unit =
         val jarPath = scala.util.Try {
@@ -37,6 +39,7 @@ import Context.*
           case Some(dir) => s"Recording: ON -> $dir"
           case None      => "Recording: OFF"
         val strictStatus = if config.strictMode then "Strict:    ON (file ops blocked in exec)" else "Strict:    OFF"
+        val sessionStatus = if config.sessionEnabled then "Sessions:  ON" else "Sessions:  OFF"
         val llmStatus = config.llmConfig match
           case Some(cfg) => s"LLM:       ON -> ${cfg.model} @ ${cfg.baseUrl}"
           case None      => "LLM:       OFF"
@@ -50,6 +53,7 @@ import Context.*
             |║  Protocol:  Model Context Protocol (MCP)                         ║
             |║  $recordingStatus
             |║  $strictStatus
+            |║  $sessionStatus
             |║  $llmStatus
             |╚══════════════════════════════════════════════════════════════════╝
             |
@@ -91,7 +95,7 @@ import Context.*
           if line == null then
             running = false
           else if line.trim.nonEmpty then
-            if !config.quiet then log(s"Received: ${line.take(200)}...")
+            log(s"Received: ${line.take(200)}...")
 
             parse(line) match
               case Left(error) =>
@@ -118,11 +122,10 @@ import Context.*
                     }
       catch
         case e: Exception =>
-          log(s"Error: ${e.getMessage}")
+          error(e.getMessage)
           e.printStackTrace(System.err)
       finally
-        if !config.quiet then
-          log("Server shutting down...")
+        log("Server shutting down...")
 
 def sendResponse(writer: PrintWriter, response: JsonRpcResponse, quiet: Boolean = false): Unit =
   val json = response.asJson.noSpaces

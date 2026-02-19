@@ -2,7 +2,7 @@ import executor.{CodeValidator, ScalaExecutor, SessionManager}
 import core.Context
 
 class CodeValidatorSuite extends munit.FunSuite:
-  given Context = Context(None, strictMode = false)
+  given Context = Context(core.Config(), None)
 
   // ---- Rejection tests by category ----
 

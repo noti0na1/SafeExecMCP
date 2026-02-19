@@ -1,4 +1,4 @@
-package config
+package core
 
 import scopt.OParser
 import library.LlmConfig
@@ -10,6 +10,7 @@ case class Config(
   llmConfig: Option[LlmConfig] = None,
   quiet: Boolean = false,
   wrappedCode: Boolean = true,
+  sessionEnabled: Boolean = true,
 )
 
 object Config:
@@ -34,6 +35,7 @@ object Config:
     val strictMode = cursor.get[Boolean]("strictMode").toOption.getOrElse(base.strictMode)
     val quiet = cursor.get[Boolean]("quiet").toOption.getOrElse(base.quiet)
     val wrappedCode = cursor.get[Boolean]("wrappedCode").toOption.getOrElse(base.wrappedCode)
+    val sessionEnabled = cursor.get[Boolean]("sessionEnabled").toOption.getOrElse(base.sessionEnabled)
     val classifiedPaths = cursor.downField("classifiedPaths").as[List[String]].toOption
       .map(_.toSet).getOrElse(base.classifiedPaths)
     val llmConfig = cursor.downField("llm").focus.flatMap { llmJson =>
@@ -57,6 +59,7 @@ object Config:
       llmConfig = llmConfig,
       quiet = quiet,
       wrappedCode = wrappedCode,
+      sessionEnabled = sessionEnabled,
     )
 
   /** Validate that LlmConfig doesn't have empty-string fields (from partial CLI flags). */
@@ -91,6 +94,9 @@ object Config:
       opt[Unit]("no-wrap")
         .action((_, c) => c.copy(wrappedCode = false))
         .text("Disable wrapping user code in def run() = ... ; run() (workaround for capture checking REPL errors)."),
+      opt[Unit]("no-session")
+        .action((_, c) => c.copy(sessionEnabled = false))
+        .text("Disable session-related tools (create/execute/delete/list sessions)."),
       opt[String]('c', "config")
         .action((x, c) => mergeFromFile(c, x))
         .text("Path to JSON config file."),

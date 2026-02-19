@@ -2,7 +2,7 @@ import executor.SessionManager
 import core.Context
 
 class SessionManagerSuite extends munit.FunSuite:
-  given Context = Context(None, strictMode = false)
+  given Context = Context(core.Config(), None)
 
   test("create and list sessions"):
     val manager = new SessionManager

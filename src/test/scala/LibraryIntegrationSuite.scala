@@ -2,11 +2,12 @@ import executor.{ScalaExecutor, SessionManager}
 import core.Context
 
 class LibraryIntegrationSuite extends munit.FunSuite:
-  given Context = Context(None, strictMode = false)
+  given Context = Context(core.Config(), None)
 
   /** Helper: assert that code fails to compile in the REPL with an error matching `pattern`. */
   private def assertCompileError(code: String, pattern: String)(using loc: munit.Location): Unit =
     val result = ScalaExecutor.execute(code)
+    assert(!result.success, s"expected compilation failure, got success with: ${result.output}")
     val output = result.output.toLowerCase
     assert(output.contains("error"), s"expected a compile error, got: ${result.output}")
     assert(output.contains(pattern.toLowerCase), s"expected error containing '$pattern', got: ${result.output}")

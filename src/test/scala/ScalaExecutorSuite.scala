@@ -2,7 +2,7 @@ import executor.ScalaExecutor
 import core.Context
 
 class ScalaExecutorSuite extends munit.FunSuite:
-  given Context = Context(None, strictMode = false)
+  given Context = Context(core.Config(), None)
 
   test("execute simple expression"):
     val result = ScalaExecutor.execute("1 + 1")
@@ -29,8 +29,7 @@ class ScalaExecutorSuite extends munit.FunSuite:
 
   test("handle syntax error"):
     val result = ScalaExecutor.execute("val x = def")
-    // Should handle gracefully - either success=false or contains error in output
-    assert(!result.success || result.output.toLowerCase.contains("error"))
+    assert(!result.success)
 
   test("use scala.collection.List"):
     val result = ScalaExecutor.execute("List(1, 2, 3).map(_ * 2)")

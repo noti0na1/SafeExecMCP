@@ -5,6 +5,11 @@ import io.circe.syntax.*
 
 /** Tool definitions for the MCP server */
 object Tools:
+  private val sessionToolNames: Set[String] =
+    Set("create_repl_session", "execute_in_session", "delete_repl_session", "list_sessions")
+
+  def isSessionTool(name: String): Boolean = sessionToolNames.contains(name)
+
   val all: List[Tool] = List(
     Tool(
       name = "execute_scala",

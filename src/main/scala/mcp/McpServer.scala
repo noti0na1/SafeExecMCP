@@ -30,7 +30,8 @@ class McpServer(using Context):
   private val sessionManager = new SessionManager
 
   def recorder: Option[CodeRecorder] = ctx.recorder
-  def strictMode: Boolean = ctx.strictMode
+  def strictMode: Boolean = ctx.config.strictMode
+  def sessionEnabled: Boolean = ctx.config.sessionEnabled
 
   /** Handle a JSON-RPC request and return a response */
   def handleRequest(request: JsonRpcRequest): Option[JsonRpcResponse] =
@@ -73,7 +74,9 @@ class McpServer(using Context):
     Some(JsonRpcResponse.success(request.id, result.asJson))
   
   private def handleToolsList(request: JsonRpcRequest): Option[JsonRpcResponse] =
-    val result = ToolsListResult(Tools.all)
+    val tools = if sessionEnabled then Tools.all
+                else Tools.all.filterNot(t => Tools.isSessionTool(t.name))
+    val result = ToolsListResult(tools)
     Some(JsonRpcResponse.success(request.id, result.asJson))
   
   private def handleToolsCall(request: JsonRpcRequest): Option[JsonRpcResponse] =
@@ -94,7 +97,9 @@ class McpServer(using Context):
         ))
   
   private def callTool(name: String, arguments: Option[Json]): Either[String, CallToolResult] =
-    name match
+    if !sessionEnabled && Tools.isSessionTool(name) then
+      Left(s"Session tools are disabled. Use execute_scala for stateless execution.")
+    else name match
       case "execute_scala" =>
         executeScala(arguments)
       case "create_repl_session" =>
