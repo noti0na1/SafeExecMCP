@@ -17,7 +17,7 @@ trait Classified[+T]:
 
 /** Handle to a file or directory, obtained via `access(path)` inside a
  *  `requestFileSystem` block. Cannot escape the block scope. */
-abstract class FileEntry(tracked val origin: FileSystem):
+abstract class FileEntry(val origin: FileSystem):
   def path: String
   def name: String
   def exists: Boolean

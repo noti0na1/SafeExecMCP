@@ -11,6 +11,7 @@ Usage:
     python run_swebench.py --first 10                       # First N instances
     python run_swebench.py --resume                         # Skip completed instances
     python run_swebench.py --timeout 900                    # 15-minute timeout
+    python run_swebench.py -j 4                             # Run 4 instances in parallel
 """
 
 import argparse
@@ -18,7 +19,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -293,17 +296,21 @@ def run_instance(
     if not patch.strip():
         print(f"  WARNING: empty diff")
 
-    # 5. Write prediction
+    # 5. Write prediction (thread-safe via lock)
     prediction = {
         "instance_id": instance_id,
         "model_name_or_path": MODEL_NAME,
         "model_patch": patch,
     }
-    with open(predictions_path, "a") as f:
-        f.write(json.dumps(prediction) + "\n")
+    with _predictions_lock:
+        with open(predictions_path, "a") as f:
+            f.write(json.dumps(prediction) + "\n")
 
-    print(f"  Prediction written ({len(patch)} bytes patch)")
+    print(f"  [{instance_id}] Prediction written ({len(patch)} bytes patch)")
     return True
+
+
+_predictions_lock = threading.Lock()
 
 
 def main():
@@ -345,6 +352,13 @@ def main():
         help="Tool mode: 'default' (built-in tools) or 'mcp_only' (MCP only, all built-in tools denied)",
     )
     parser.add_argument(
+        "-j",
+        "--parallel",
+        type=int,
+        default=1,
+        help="Number of instances to run in parallel (default: 1)",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         help="Output directory (default: bench/swebench_runs/<timestamp>)",
@@ -355,6 +369,17 @@ def main():
     bench_dir = Path(__file__).resolve().parent
     if args.output_dir:
         run_dir = Path(args.output_dir)
+    elif args.resume:
+        # Find the most recent existing run directory
+        runs_root = bench_dir / "swebench_runs"
+        existing = sorted(runs_root.iterdir()) if runs_root.is_dir() else []
+        existing = [d for d in existing if d.is_dir()]
+        if existing:
+            run_dir = existing[-1]
+            print(f"Resuming from latest run: {run_dir}")
+        else:
+            print("ERROR: --resume but no previous runs found in swebench_runs/")
+            sys.exit(1)
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir = bench_dir / "swebench_runs" / timestamp
@@ -414,27 +439,64 @@ def main():
     succeeded = 0
     failed = 0
     start_time = time.time()
+    num_workers = max(1, args.parallel)
 
-    for idx, instance in enumerate(instances):
-        instance_id = instance["instance_id"]
-        print(f"[{idx + 1}/{len(instances)}] {instance_id}")
+    if num_workers == 1:
+        # Sequential mode (original behavior)
+        for idx, instance in enumerate(instances):
+            instance_id = instance["instance_id"]
+            print(f"[{idx + 1}/{len(instances)}] {instance_id}")
 
-        try:
-            ok = run_instance(
-                instance, workspace_dir, predictions_path, args.model, args.timeout, args.mode
-            )
-            if ok:
-                succeeded += 1
-            else:
+            try:
+                ok = run_instance(
+                    instance, workspace_dir, predictions_path, args.model, args.timeout, args.mode
+                )
+                if ok:
+                    succeeded += 1
+                else:
+                    failed += 1
+            except KeyboardInterrupt:
+                print("\nInterrupted by user")
+                break
+            except Exception as e:
+                print(f"  UNEXPECTED ERROR: {e}")
                 failed += 1
-        except KeyboardInterrupt:
-            print("\nInterrupted by user")
-            break
-        except Exception as e:
-            print(f"  UNEXPECTED ERROR: {e}")
-            failed += 1
 
-        print()
+            print()
+    else:
+        # Parallel mode
+        print(f"Running with {num_workers} parallel workers\n")
+
+        def _run_one(idx_instance):
+            idx, instance = idx_instance
+            instance_id = instance["instance_id"]
+            print(f"[{idx + 1}/{len(instances)}] START {instance_id}")
+            try:
+                ok = run_instance(
+                    instance, workspace_dir, predictions_path, args.model, args.timeout, args.mode
+                )
+                return instance_id, ok, None
+            except Exception as e:
+                return instance_id, False, e
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {
+                executor.submit(_run_one, (idx, inst)): inst["instance_id"]
+                for idx, inst in enumerate(instances)
+            }
+            try:
+                for future in as_completed(futures):
+                    instance_id, ok, err = future.result()
+                    if err:
+                        print(f"  [{instance_id}] UNEXPECTED ERROR: {err}")
+                        failed += 1
+                    elif ok:
+                        succeeded += 1
+                    else:
+                        failed += 1
+            except KeyboardInterrupt:
+                print("\nInterrupted by user — cancelling pending tasks ...")
+                executor.shutdown(wait=False, cancel_futures=True)
 
     elapsed = time.time() - start_time
     total = succeeded + failed
