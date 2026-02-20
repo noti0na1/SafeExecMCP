@@ -32,10 +32,18 @@ DATASET = "princeton-nlp/SWE-bench_Lite"
 DEFAULT_MODEL = "openrouter/anthropic/claude-sonnet-4.5"
 DEFAULT_TIMEOUT = 600  # 10 minutes
 MODEL_NAME = "opencode-claude-sonnet-4.5"
-OPENCODE_BIN = os.environ.get(
-    "OPENCODE_BIN",
-    os.path.expanduser("~/.opencode/bin/opencode"),
-)
+def _find_opencode_bin() -> str:
+    """Find the opencode binary, checking OPENCODE_BIN env var, then PATH."""
+    env = os.environ.get("OPENCODE_BIN")
+    if env:
+        return env
+    import shutil
+    path = shutil.which("opencode")
+    if path:
+        return path
+    return os.path.expanduser("~/.opencode/bin/opencode")
+
+OPENCODE_BIN = _find_opencode_bin()
 def _find_safexec_jar() -> str:
     """Find the SafeExecMCP assembly JAR under ../target/scala-*/."""
     project_root = Path(__file__).resolve().parent.parent
